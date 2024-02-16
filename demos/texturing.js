@@ -15,8 +15,8 @@ let fragmentShader = `
     #version 300 es
     precision highp float;
     
-    uniform sampler2D tex1;
-    uniform sampler2D tex2;
+    uniform sampler2D tex;
+    uniform float scrollSpeed; // Speed of scrolling
     
     in vec2 v_uv;
     
@@ -24,10 +24,11 @@ let fragmentShader = `
     
     void main()
     {        
-        vec4 color1 = texture(tex1, v_uv);
-        vec4 color2 = texture(tex2, v_uv);
-        // Blend the two textures here
-        outColor = color1 * 0.5 + color2 * 0.5; // Example blend: average of two colors
+        // Apply distortion to UV coordinates for scrolling effect
+        vec2 distortedUV = v_uv + vec2(0.0, scrollSpeed * v_uv.y);
+        
+        // Sample the texture with distorted UV coordinates
+        outColor = texture(tex, distortedUV);
     }
 `;
 
