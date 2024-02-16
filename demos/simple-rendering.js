@@ -23,7 +23,7 @@ import {mat4, vec3, vec4} from "../node_modules/gl-matrix/esm/index.js";
 //                  |/             |/
 //     -.5 -.5 .5   *--------------*  .5 -.5 .5
 
-import {positions, normals, indices} from "../blender/Monkey.js"
+import {positions, normals, indices} from "../blender/light saber.js"
 
 // ******************************************************
 // **               Geometry processing                **
@@ -76,7 +76,7 @@ let fragmentShader = `
 // **             Application processing               **
 // ******************************************************
 
-let bgColor = vec4.fromValues(1.0, 0.2, 3.3, 5.0);
+let bgColor = vec4.fromValues(0.0, 0.0, 0.0, 1.0);
 let fgColor = vec4.fromValues(1.0, 0.9, 3.5, 5.0);
 
 
@@ -106,7 +106,7 @@ let drawCall = app.createDrawCall(program, vertexArray)
     .uniform("fgColor", fgColor);
 
 function draw(timems) {
-    const time = timems * 0.0005;
+    const time = timems * 0.005;
 
     mat4.perspective(projMatrix, Math.PI / 4, app.width / app.height, 0.1, 100.0);
     mat4.lookAt(viewMatrix, vec3.fromValues(3, 0, 2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
