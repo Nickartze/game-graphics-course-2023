@@ -46,7 +46,12 @@ let vertexShader = `
     
     void main()
     {
-        gl_Position = modelViewProjectionMatrix * vec4(position, 1.0);
+        // Apply model transformation (scaling) to the position
+        vec4 scaledPosition = modelViewProjectionMatrix * vec4(position * 0.25, 1.0); // Scale object by half
+        gl_Position = scaledPosition;
+        
+
+        //gl_Position = modelViewProjectionMatrix * vec4(position, 1.0);//
         vec3 viewNormal = (modelViewMatrix * vec4(normal, 0.0)).xyz;
         color = mix(bgColor * 0.01, fgColor, viewNormal.z) + pow(viewNormal.z, 10.0);
     }
@@ -109,7 +114,10 @@ function draw(timems) {
     const time = timems * 0.005;
 
     mat4.perspective(projMatrix, Math.PI / 4, app.width / app.height, 0.1, 100.0);
-    mat4.lookAt(viewMatrix, vec3.fromValues(3, 0, 2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+      // Update camera position and orientation
+      const cameraPosition = vec3.fromValues(3 * Math.sin(time * 0.1), 0.5, 2 * Math.cos(time * 0.1)); // Adjusted time factor
+      mat4.lookAt(viewMatrix, cameraPosition, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+  
     mat4.multiply(viewProjMatrix, projMatrix, viewMatrix);
 
     mat4.fromXRotation(rotateXMatrix, time * 0.1136);
