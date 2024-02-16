@@ -91,6 +91,12 @@ let drawCall = app.createDrawCall(program, vertexArray)
     .uniform("bgColor", bgColor)
     .uniform("fgColor", fgColor);
 
+async function loadTexture(fileName) {
+        return await createImageBitmap(await (await fetch("images/" + fileName)).blob());
+    }
+    
+    const tex = await loadTexture("desert.png");
+
 function draw(timems) {
         let time = timems / 500;
     
