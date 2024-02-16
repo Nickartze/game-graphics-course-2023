@@ -15,7 +15,8 @@ let fragmentShader = `
     #version 300 es
     precision highp float;
     
-    uniform sampler2D tex;    
+    uniform sampler2D tex1;
+    uniform sampler2D tex2;
     
     in vec2 v_uv;
     
@@ -23,9 +24,13 @@ let fragmentShader = `
     
     void main()
     {        
-        outColor = texture(tex, v_uv);
+        vec4 color1 = texture(tex1, v_uv);
+        vec4 color2 = texture(tex2, v_uv);
+        // Blend the two textures here
+        outColor = color1 * 0.5 + color2 * 0.5; // Example blend: average of two colors
     }
 `;
+
 
 // language=GLSL
 let vertexShader = `
