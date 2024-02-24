@@ -1,128 +1,205 @@
 import PicoGL from "../node_modules/picogl/build/module/picogl.js";
-import {mat4, vec3, vec4} from "../node_modules/gl-matrix/esm/index.js";
+import {mat4, vec3, vec4, quat} from "../node_modules/gl-matrix/esm/index.js";
 
+import {positions, normals, indices} from "../blender/light saber.js";
+import {positions as planePositions, uvs as planeUvs, indices as planeIndices} from "../blender/light saber.js";
 
-
-
-import {positions, normals, indices} from "../blender/light saber.js"
-
-// ******************************************************
-// **               Geometry processing                **
-// ******************************************************
+// language=GLSL
+let fragmentShader = `
+    #version 300 es    
+    precision highp float;    
+    precision highp sampler2DShadow;
+    
+    uniform vec4 baseColor;
+    uniform vec4 ambientColor;
+    uniform vec3 lightPosition;
+    uniform vec3 cameraPosition;    
+    uniform sampler2DShadow shadowMap;
+    
+    in vec3 vPosition;
+    in vec3 vNormal;
+    in vec4 vPositionFromLight;
+    in vec3 vModelPosition;
+    out vec4 fragColor;
+    
+    void main() {
+        vec3 shadowCoord = (vPositionFromLight.xyz / vPositionFromLight.w) / 2.0 + 0.5;        
+        float shadow = texture(shadowMap, shadowCoord);
+        
+        vec3 normal = normalize(vNormal);
+        vec3 eyeDirection = normalize(cameraPosition - vPosition);
+        vec3 lightDirection = normalize(lightPosition - vPosition);        
+        vec3 reflectionDirection = reflect(-lightDirection, normal);
+        
+        float diffuse = max(dot(lightDirection, normal), 0.0) * max(shadow, 0.2);        
+        float specular = shadow * pow(max(dot(reflectionDirection, eyeDirection), 0.0), 100.0) * 0.7;
+        fragColor = vec4(diffuse * baseColor.rgb + ambientColor.rgb + specular, baseColor.a);
+    }
+`;
 
 // language=GLSL
 let vertexShader = `
     #version 300 es
     
-    uniform float time;
-    uniform vec4 bgColor;
-    uniform vec4 fgColor;
-    uniform mat4 modelViewMatrix;
-    uniform mat4 modelViewProjectionMatrix;
-    
-    layout(location=0) in vec3 position;
+    layout(location=0) in vec4 position;
     layout(location=1) in vec3 normal;
     
-    out vec4 color;
+    uniform mat4 modelMatrix;
+    uniform mat4 modelViewProjectionMatrix;
+    uniform mat4 lightModelViewProjectionMatrix;
     
-    void main()
-    {
-        // Apply model transformation (scaling) to the position
-        vec4 scaledPosition = modelViewProjectionMatrix * vec4(position * 0.1, 1.0); // Scale object by half
-        gl_Position = scaledPosition;
-        
-
-        //gl_Position = modelViewProjectionMatrix * vec4(position, 1.0);//
-        vec3 viewNormal = (modelViewMatrix * vec4(normal, 0.0)).xyz;
-        color = mix(bgColor * 0.01, fgColor, viewNormal.z) + pow(viewNormal.z, 10.0);
+    out vec3 vPosition;
+    out vec3 vNormal;
+    out vec4 vPositionFromLight;
+    out vec3 vModelPosition;
+    
+    void main() {
+        gl_Position = modelViewProjectionMatrix * position;
+        vModelPosition = vec3(position);
+        vPosition = vec3(modelMatrix * position);
+        vNormal = vec3(modelMatrix * vec4(normal, 0.0));
+        vPositionFromLight = lightModelViewProjectionMatrix * position;
     }
 `;
-
-// ******************************************************
-// **                 Pixel processing                 **
-// ******************************************************
 
 // language=GLSL
-let fragmentShader = `
+let shadowFragmentShader = `
     #version 300 es
     precision highp float;
-    uniform float time;
     
-    in vec4 color;
+    out vec4 fragColor;
     
-    out vec4 outColor;
-    
-    void main()
-    {
-        outColor = color;
+    void main() {
+        // Uncomment to see the depth buffer of the shadow map    
+        //fragColor = vec4((gl_FragCoord.z - 0.98) * 50.0);    
     }
 `;
 
-// ******************************************************
-// **             Application processing               **
-// ******************************************************
+// language=GLSL
+let shadowVertexShader = `
+    #version 300 es
+    layout(location=0) in vec4 position;
+    uniform mat4 lightModelViewProjectionMatrix;
+    
+    void main() {
+        gl_Position = lightModelViewProjectionMatrix * position;
+    }
+`;
 
-let bgColor = vec4.fromValues(0.0, 0.0, 0.0, 1.0);
-let fgColor = vec4.fromValues(1.0, 0.9, 3.5, 5.0);
+let bgColor = vec4.fromValues(0.0, 0.0, 0.0, 0.0);
+let fgColor = vec4.fromValues(1.0, 0.9, 0.5, 1.0);
 
+app.enable(PicoGL.DEPTH_TEST)
+   .enable(PicoGL.CULL_FACE)
+   .clearColor(bgColor[0], bgColor[1], bgColor[2], bgColor[3]);
 
-
-app.clearColor(bgColor[0], bgColor[1], bgColor[2], bgColor[3])
-    .enable(PicoGL.DEPTH_TEST)
-    .enable(PicoGL.CULL_FACE);
-
-let program = app.createProgram(vertexShader.trim(), fragmentShader.trim());
+let program = app.createProgram(vertexShader, fragmentShader);
+let shadowProgram = app.createProgram(shadowVertexShader, shadowFragmentShader);
 
 let vertexArray = app.createVertexArray()
     .vertexAttributeBuffer(0, app.createVertexBuffer(PicoGL.FLOAT, 3, positions))
     .vertexAttributeBuffer(1, app.createVertexBuffer(PicoGL.FLOAT, 3, normals))
     .indexBuffer(app.createIndexBuffer(PicoGL.UNSIGNED_INT, 3, indices));
 
+// Change the shadow texture resolution to checkout the difference
+let shadowDepthTarget = app.createTexture2D(512, 512, {
+    internalFormat: PicoGL.DEPTH_COMPONENT16,
+    compareMode: PicoGL.COMPARE_REF_TO_TEXTURE,
+    magFilter: PicoGL.LINEAR,
+    minFilter: PicoGL.LINEAR,
+    wrapS: PicoGL.CLAMP_TO_EDGE,
+    wrapT: PicoGL.CLAMP_TO_EDGE
+});
+let shadowBuffer = app.createFramebuffer().depthTarget(shadowDepthTarget);
+
+let time = 0;
 let projMatrix = mat4.create();
 let viewMatrix = mat4.create();
 let viewProjMatrix = mat4.create();
 let modelMatrix = mat4.create();
-let modelViewMatrix = mat4.create();
 let modelViewProjectionMatrix = mat4.create();
-let rotateXMatrix = mat4.create();
-let rotateYMatrix = mat4.create();
+let rotation = quat.create();
+let lightModelViewProjectionMatrix = mat4.create();
+
+let cameraPosition = vec3.create();
+let lightPosition = vec3.create();
+let lightViewMatrix = mat4.create();
+let lightViewProjMatrix = mat4.create();
 
 let drawCall = app.createDrawCall(program, vertexArray)
-    .uniform("bgColor", bgColor)
-    .uniform("fgColor", fgColor);
+    .uniform("baseColor", fgColor)
+    .uniform("ambientColor", vec4.scale(vec4.create(), bgColor, 0.7))
+    .uniform("modelMatrix", modelMatrix)
+    .uniform("modelViewProjectionMatrix", modelViewProjectionMatrix)
+    .uniform("cameraPosition", cameraPosition)
+    .uniform("lightPosition", lightPosition)
+    .uniform("lightModelViewProjectionMatrix", lightModelViewProjectionMatrix)
+    .texture("shadowMap", shadowDepthTarget);
 
-async function loadTexture(fileName) {
-        return await createImageBitmap(await (await fetch("images/" + fileName)).blob());
-    }
-    
-    const tex = await loadTexture("desert.png");
+let shadowDrawCall = app.createDrawCall(shadowProgram, vertexArray)
+    .uniform("lightModelViewProjectionMatrix", lightModelViewProjectionMatrix);
+
+function renderShadowMap() {
+    app.drawFramebuffer(shadowBuffer);
+    app.viewport(0, 0, shadowDepthTarget.width, shadowDepthTarget.height);
+    app.gl.cullFace(app.gl.FRONT);
+
+    // Projection and view matrices are changed to render objects from the point view of light source
+    mat4.perspective(projMatrix, Math.PI * 0.1, shadowDepthTarget.width / shadowDepthTarget.height, 0.1, 100.0);
+    mat4.multiply(lightViewProjMatrix, projMatrix, lightViewMatrix);
+
+    drawObjects(shadowDrawCall);
+
+    app.gl.cullFace(app.gl.BACK);
+    app.defaultDrawFramebuffer();
+    app.defaultViewport();
+}
+
+function drawObjects(dc) {
+    app.clear();
+
+    // Middle object
+    quat.fromEuler(rotation, time * 48.24, time * 56.97, 0);
+    mat4.fromRotationTranslationScale(modelMatrix, rotation, vec3.fromValues(0, 0, 0), [0.8, 0.8, 0.8]);
+    mat4.multiply(modelViewProjectionMatrix, viewProjMatrix, modelMatrix);
+    mat4.multiply(lightModelViewProjectionMatrix, lightViewProjMatrix, modelMatrix);
+
+    dc.draw();
+
+    // Large object
+    quat.fromEuler(rotation, time * 12, time * 14, 0);
+    mat4.fromRotationTranslationScale(modelMatrix, rotation, vec3.fromValues(-2.4, -2.4, -1.2), [2, 2, 2]);
+    mat4.multiply(modelViewProjectionMatrix, viewProjMatrix, modelMatrix);
+    mat4.multiply(lightModelViewProjectionMatrix, lightViewProjMatrix, modelMatrix);
+
+    dc.draw();
+
+    // Small object
+    quat.fromEuler(rotation, time * 15, time * 17, 0);
+    mat4.fromRotationTranslationScale(modelMatrix, rotation, vec3.fromValues(0.9, 0.9, 0.6), [0.22, 0.22, 0.22]);
+    mat4.multiply(modelViewProjectionMatrix, viewProjMatrix, modelMatrix);
+    mat4.multiply(lightModelViewProjectionMatrix, lightViewProjMatrix, modelMatrix);
+
+    dc.draw();
+}
 
 function draw(timems) {
-        let time = timems / 500;
-    
-       
+    time = timems * 0.001;
 
-    mat4.perspective(projMatrix, Math.PI / 4, app.width / app.height, 0.1, 100.0);
-      // Update camera position and orientation
-      const cameraPosition = vec3.fromValues(3 * Math.sin(time * 0.1), 0.5, 2 * Math.cos(time * 0.1)); // Adjusted time factor
-      mat4.lookAt(viewMatrix, cameraPosition, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
-  
+    vec3.set(cameraPosition, 0, 2, 4);
+    mat4.perspective(projMatrix, Math.PI / 2.5, app.width / app.height, 0.1, 100.0);
+    mat4.lookAt(viewMatrix, cameraPosition, vec3.fromValues(0, -0.5, 0), vec3.fromValues(0, 1, 0));
     mat4.multiply(viewProjMatrix, projMatrix, viewMatrix);
 
-    mat4.fromXRotation(rotateXMatrix, time * 0.1136);
-    mat4.fromYRotation(rotateYMatrix, time * 0.2235);
-    mat4.multiply(modelMatrix, rotateXMatrix, rotateYMatrix);
+    vec3.set(lightPosition, 5, 5, 2.5);
+    mat4.lookAt(lightViewMatrix, lightPosition, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
 
-    mat4.multiply(modelViewMatrix, viewMatrix, modelMatrix);
-    mat4.multiply(modelViewProjectionMatrix, viewProjMatrix, modelMatrix);
-
-    drawCall.uniform("time", time);
-    drawCall.uniform("modelViewMatrix", modelViewMatrix);
-    drawCall.uniform("modelViewProjectionMatrix", modelViewProjectionMatrix);
-
-    app.clear();
-    drawCall.draw();
+    renderShadowMap();
+    drawObjects(drawCall);
 
     requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
+
+
+
